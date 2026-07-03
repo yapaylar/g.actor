@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# g-world
 
-## Getting Started
+The home for the team's projects. Every initiative — `G-ACT`, `V-loop`, `Heartlink`, `Social` — lives as a card on one screen. Open a card to follow progress, drop notes, and send the team a notification.
 
-First, run the development server:
+Built as a clean, fast web app (works great on desktop and mobile, and can be installed to the home screen like an app).
+
+## Tech
+
+- **Next.js 16** (App Router) + **React 19** + **TypeScript**
+- **Tailwind CSS v4**
+- Data is stored **locally in the browser** (`localStorage`) for now — no login, no setup, instant to use.
+
+## Run it
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open the URL it prints (e.g. `http://localhost:3000`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## What it does today
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Dashboard** — all projects as floating glass spheres, plus a `+ New project` card.
+- **World view** — toggle to an orbital map: every project orbits the g-world sphere. Hover to pause, click to enter.
+- **Command palette** — press `⌘K` anywhere to search projects, updates, and notes, or run quick actions.
+- **Dark mode** — toggle in the top bar; follows your system preference by default.
+- **Project view** — overview, an **Updates** timeline (update / milestone / release / blocker), and **Notes & comments**.
+- **Notify** — send a notification about a project; it shows up in the bell for everyone.
+- **Team chat** — a per-project chat panel on the right for the team to talk, with a pinned **Yapaylar** teaser at the top.
+- **Your name** — click the avatar (top right) to set who you are; it's used as the author on your posts.
 
-## Learn More
+> Tip: data lives in your browser. To start fresh, clear site data, or run `resetAll()` from `src/lib/store.ts` in the console.
 
-To learn more about Next.js, take a look at the following resources:
+## Roadmap
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Real team sharing** — add accounts + a shared database (e.g. Supabase) so everyone sees the same data and gets real notifications.
+2. **Yapaylar** (future AI) — AI teammates that live pinned at the top of each project's chat.
+   - Each person gets their **own** assistant, **trained on that project** (its updates, notes, files).
+   - Pick one of three models per conversation: **GPT**, **Claude**, or **Gemini**.
+   - For now it's a teaser only; the real team chat ships first.
+3. **Install as an app** — PWA polish (icon, offline, "Add to home screen").
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project structure
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+  app/
+    page.tsx                  # dashboard route
+    project/[id]/page.tsx     # project route
+    layout.tsx, globals.css
+  components/                 # UI (cards, panels, composers, chat)
+  lib/
+    types.ts                  # data model
+    store.ts                  # localStorage store + mutations
+    identity.ts               # current user's name
+    util.ts                   # helpers (time, colors)
+```

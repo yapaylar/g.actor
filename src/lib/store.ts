@@ -9,6 +9,7 @@ import type {
   Project,
   Update,
 } from "./types";
+import { getSupabase, supabaseEnabled } from "./supabase";
 
 const STORAGE_KEY = "g-world:state:v5";
 
@@ -193,8 +194,181 @@ function seed(): AppState {
   return { projects, updates, notes, notifications, messages: [] };
 }
 
-let state: AppState | null = null;
+// ---- Row mapping (snake_case DB rows <-> camelCase app types) ----
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+type Row = Record<string, any>;
+
+function rowToProject(r: Row): Project {
+  return {
+    id: r.id,
+    name: r.name,
+    initials: r.initials,
+    tagline: r.tagline,
+    description: r.description,
+    accent: r.accent,
+    status: r.status,
+    logo: r.logo ?? undefined,
+    logoWide: r.logo_wide ?? undefined,
+    logos: r.logos ?? undefined,
+    focus: r.focus ?? undefined,
+    links: r.links ?? undefined,
+    createdAt: Date.parse(r.created_at),
+  };
+}
+
+function projectToRow(p: Project): Row {
+  return {
+    id: p.id,
+    name: p.name,
+    initials: p.initials,
+    tagline: p.tagline,
+    description: p.description,
+    accent: p.accent,
+    status: p.status,
+    logo: p.logo ?? null,
+    logo_wide: p.logoWide ?? null,
+    logos: p.logos ?? null,
+    focus: p.focus ?? null,
+    links: p.links ?? null,
+    created_at: new Date(p.createdAt).toISOString(),
+  };
+}
+
+function rowToUpdate(r: Row): Update {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    author: r.author,
+    title: r.title,
+    body: r.body,
+    kind: r.kind,
+    attachments: r.attachments ?? undefined,
+    createdAt: Date.parse(r.created_at),
+  };
+}
+
+function updateToRow(u: Update): Row {
+  return {
+    id: u.id,
+    project_id: u.projectId,
+    author: u.author,
+    title: u.title,
+    body: u.body,
+    kind: u.kind,
+    attachments: u.attachments ?? null,
+    created_at: new Date(u.createdAt).toISOString(),
+  };
+}
+
+function rowToNote(r: Row): Note {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    author: r.author,
+    body: r.body,
+    attachments: r.attachments ?? undefined,
+    createdAt: Date.parse(r.created_at),
+  };
+}
+
+function noteToRow(n: Note): Row {
+  return {
+    id: n.id,
+    project_id: n.projectId,
+    author: n.author,
+    body: n.body,
+    attachments: n.attachments ?? null,
+    created_at: new Date(n.createdAt).toISOString(),
+  };
+}
+
+function rowToNotification(r: Row): AppNotification {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    title: r.title,
+    body: r.body,
+    audience: r.audience,
+    read: r.read,
+    createdAt: Date.parse(r.created_at),
+  };
+}
+
+function notificationToRow(n: AppNotification): Row {
+  return {
+    id: n.id,
+    project_id: n.projectId,
+    title: n.title,
+    body: n.body,
+    audience: n.audience,
+    read: n.read,
+    created_at: new Date(n.createdAt).toISOString(),
+  };
+}
+
+function rowToMessage(r: Row): ChatMessage {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    author: r.author,
+    body: r.body,
+    createdAt: Date.parse(r.created_at),
+  };
+}
+
+function messageToRow(m: ChatMessage): Row {
+  return {
+    id: m.id,
+    project_id: m.projectId,
+    author: m.author,
+    body: m.body,
+    created_at: new Date(m.createdAt).toISOString(),
+  };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */
+
+// ---- State container ----
+
+const EMPTY_STATE: AppState = {
+  projects: [],
+  updates: [],
+  notes: [],
+  notifications: [],
+  messages: [],
+};
+
+let state: AppState = EMPTY_STATE;
+let started = false;
+let ready = false;
 const listeners = new Set<() => void>();
+
+function notifyListeners() {
+  listeners.forEach((l) => l());
+}
+
+function commit(next: AppState) {
+  state = next;
+  if (!supabaseEnabled && typeof window !== "undefined") {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    } catch {
+      window.alert(
+        "Couldn't save — local storage is full. Try removing some large attachments."
+      );
+    }
+  }
+  notifyListeners();
+}
+
+function markReady() {
+  if (!ready) {
+    ready = true;
+    notifyListeners();
+  }
+}
+
+// ---- Local fallback (no Supabase env configured) ----
 
 /**
  * Stored state can predate seed changes (logos etc.). Refresh the visual
@@ -222,8 +396,7 @@ function syncSeedVisuals(stored: AppState): AppState {
   return next;
 }
 
-function load(): AppState {
-  if (typeof window === "undefined") return emptyState();
+function loadLocal(): AppState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) {
@@ -231,45 +404,184 @@ function load(): AppState {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
       return seeded;
     }
-    const stored = JSON.parse(raw) as AppState;
-    return syncSeedVisuals(stored);
+    return syncSeedVisuals(JSON.parse(raw) as AppState);
   } catch {
     return seed();
   }
 }
 
-const EMPTY_STATE: AppState = {
-  projects: [],
-  updates: [],
-  notes: [],
-  notifications: [],
-  messages: [],
-};
+// ---- Remote (Supabase) ----
 
-function emptyState(): AppState {
-  return EMPTY_STATE;
-}
+async function initRemote() {
+  const sb = getSupabase();
+  try {
+    const [p, u, n, nf, m] = await Promise.all([
+      sb.from("projects").select("*").order("created_at", { ascending: true }),
+      sb.from("updates").select("*").order("created_at", { ascending: false }),
+      sb.from("notes").select("*").order("created_at", { ascending: false }),
+      sb
+        .from("notifications")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      sb.from("messages").select("*").order("created_at", { ascending: true }),
+    ]);
+    const firstError =
+      p.error ?? u.error ?? n.error ?? nf.error ?? m.error ?? null;
+    if (firstError) throw firstError;
 
-function ensure(): AppState {
-  if (state === null) state = load();
-  return state;
-}
+    let next: AppState = {
+      projects: (p.data ?? []).map(rowToProject),
+      updates: (u.data ?? []).map(rowToUpdate),
+      notes: (n.data ?? []).map(rowToNote),
+      notifications: (nf.data ?? []).map(rowToNotification),
+      messages: (m.data ?? []).map(rowToMessage),
+    };
 
-function commit(next: AppState) {
-  state = next;
-  if (typeof window !== "undefined") {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // Likely storage quota exceeded (e.g. large attachments).
-      if (typeof window !== "undefined") {
-        window.alert(
-          "Couldn't save — local storage is full. Try removing some large attachments."
-        );
+    // First boot on an empty database: plant the seed content.
+    if (next.projects.length === 0) {
+      const s = seed();
+      const inserts = [
+        sb.from("projects").insert(s.projects.map(projectToRow)),
+        sb.from("updates").insert(s.updates.map(updateToRow)),
+        sb.from("notes").insert(s.notes.map(noteToRow)),
+        sb.from("notifications").insert(s.notifications.map(notificationToRow)),
+      ];
+      for (const q of inserts) {
+        const { error } = await q;
+        if (error) console.error("Seed insert failed", error);
       }
+      next = s;
     }
+
+    commit(next);
+  } catch (err) {
+    console.error("Supabase load failed", err);
+  } finally {
+    markReady();
+    subscribeRealtime();
   }
-  listeners.forEach((l) => l());
+}
+
+/** Merge live DB changes from other clients into local state. */
+function subscribeRealtime() {
+  const sb = getSupabase();
+  sb.channel("g-actor-db")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public" },
+      (payload: {
+        table: string;
+        eventType: string;
+        new: Row;
+        old: Row;
+      }) => {
+        applyRemoteChange(payload.table, payload.eventType, payload.new, payload.old);
+      }
+    )
+    .subscribe();
+}
+
+function upsertById<T extends { id: string }>(
+  list: T[],
+  item: T,
+  position: "head" | "tail"
+): T[] {
+  if (list.some((x) => x.id === item.id)) {
+    return list.map((x) => (x.id === item.id ? item : x));
+  }
+  return position === "head" ? [item, ...list] : [...list, item];
+}
+
+function applyRemoteChange(
+  table: string,
+  eventType: string,
+  newRow: Row,
+  oldRow: Row
+) {
+  const s = state;
+  if (eventType === "DELETE") {
+    const id = oldRow?.id as string | undefined;
+    if (!id) return;
+    if (table === "projects") {
+      // FK cascades already removed children in the DB; mirror that locally.
+      commit({
+        projects: s.projects.filter((x) => x.id !== id),
+        updates: s.updates.filter((x) => x.projectId !== id),
+        notes: s.notes.filter((x) => x.projectId !== id),
+        notifications: s.notifications.filter((x) => x.projectId !== id),
+        messages: s.messages.filter((x) => x.projectId !== id),
+      });
+      return;
+    }
+    const strip = <T extends { id: string }>(list: T[]) =>
+      list.filter((x) => x.id !== id);
+    if (table === "updates") commit({ ...s, updates: strip(s.updates) });
+    else if (table === "notes") commit({ ...s, notes: strip(s.notes) });
+    else if (table === "notifications")
+      commit({ ...s, notifications: strip(s.notifications) });
+    else if (table === "messages") commit({ ...s, messages: strip(s.messages) });
+    return;
+  }
+
+  if (!newRow) return;
+  switch (table) {
+    case "projects":
+      commit({
+        ...s,
+        projects: upsertById(s.projects, rowToProject(newRow), "tail"),
+      });
+      break;
+    case "updates":
+      commit({
+        ...s,
+        updates: upsertById(s.updates, rowToUpdate(newRow), "head"),
+      });
+      break;
+    case "notes":
+      commit({ ...s, notes: upsertById(s.notes, rowToNote(newRow), "head") });
+      break;
+    case "notifications":
+      commit({
+        ...s,
+        notifications: upsertById(
+          s.notifications,
+          rowToNotification(newRow),
+          "head"
+        ),
+      });
+      break;
+    case "messages":
+      commit({
+        ...s,
+        messages: upsertById(s.messages, rowToMessage(newRow), "tail"),
+      });
+      break;
+  }
+}
+
+/** Fire-and-forget remote write with error logging. */
+function remote(
+  run: (
+    sb: ReturnType<typeof getSupabase>
+  ) => PromiseLike<{ error: unknown }>
+) {
+  if (!supabaseEnabled) return;
+  void Promise.resolve(run(getSupabase())).then(({ error }) => {
+    if (error) console.error("Supabase write failed", error);
+  });
+}
+
+// ---- Store bootstrap & hooks ----
+
+function start() {
+  if (started || typeof window === "undefined") return;
+  started = true;
+  if (supabaseEnabled) {
+    void initRemote();
+  } else {
+    state = loadLocal();
+    ready = true;
+  }
 }
 
 function subscribe(listener: () => void): () => void {
@@ -278,18 +590,27 @@ function subscribe(listener: () => void): () => void {
 }
 
 function getSnapshot(): AppState {
-  return ensure();
-}
-
-function getServerSnapshot(): AppState {
-  return emptyState();
+  start();
+  return state;
 }
 
 export function useStore(): AppState {
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_STATE);
 }
 
-// ---- Mutations ----
+/** False until the first load (local or remote) has finished. */
+export function useStoreReady(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => {
+      start();
+      return ready;
+    },
+    () => false
+  );
+}
+
+// ---- Mutations (optimistic local commit + remote write) ----
 
 function initialsOf(name: string): string {
   return (
@@ -311,7 +632,6 @@ export function addProject(input: {
   status?: Project["status"];
   links?: Project["links"];
 }): Project {
-  const s = ensure();
   const project: Project = {
     id: uid(),
     name: input.name.trim() || "Untitled",
@@ -323,7 +643,8 @@ export function addProject(input: {
     links: input.links?.length ? input.links : undefined,
     createdAt: Date.now(),
   };
-  commit({ ...s, projects: [...s.projects, project] });
+  commit({ ...state, projects: [...state.projects, project] });
+  remote((sb) => sb.from("projects").insert(projectToRow(project)));
   return project;
 }
 
@@ -342,95 +663,100 @@ export function updateProject(
     >
   >
 ) {
-  const s = ensure();
-  commit({
-    ...s,
-    projects: s.projects.map((p) => {
-      if (p.id !== projectId) return p;
-      const next = { ...p, ...patch };
-      if (patch.name !== undefined) {
-        next.name = patch.name.trim() || p.name;
-        next.initials = initialsOf(next.name);
-      }
-      if (patch.links !== undefined) {
-        next.links = patch.links.length ? patch.links : undefined;
-      }
-      if (patch.focus !== undefined) {
-        next.focus = patch.focus.trim() || undefined;
-      }
-      return next;
-    }),
+  let updated: Project | null = null;
+  const projects = state.projects.map((p) => {
+    if (p.id !== projectId) return p;
+    const next = { ...p, ...patch };
+    if (patch.name !== undefined) {
+      next.name = patch.name.trim() || p.name;
+      next.initials = initialsOf(next.name);
+    }
+    if (patch.links !== undefined) {
+      next.links = patch.links.length ? patch.links : undefined;
+    }
+    if (patch.focus !== undefined) {
+      next.focus = patch.focus.trim() || undefined;
+    }
+    updated = next;
+    return next;
   });
+  if (!updated) return;
+  commit({ ...state, projects });
+  const row = projectToRow(updated);
+  remote((sb) => sb.from("projects").update(row).eq("id", projectId));
 }
 
 export function deleteProject(projectId: string) {
-  const s = ensure();
   commit({
-    projects: s.projects.filter((p) => p.id !== projectId),
-    updates: s.updates.filter((u) => u.projectId !== projectId),
-    notes: s.notes.filter((n) => n.projectId !== projectId),
-    notifications: s.notifications.filter((n) => n.projectId !== projectId),
-    messages: s.messages.filter((m) => m.projectId !== projectId),
+    projects: state.projects.filter((p) => p.id !== projectId),
+    updates: state.updates.filter((u) => u.projectId !== projectId),
+    notes: state.notes.filter((n) => n.projectId !== projectId),
+    notifications: state.notifications.filter(
+      (n) => n.projectId !== projectId
+    ),
+    messages: state.messages.filter((m) => m.projectId !== projectId),
   });
+  // Children are removed by FK cascade.
+  remote((sb) => sb.from("projects").delete().eq("id", projectId));
 }
 
 export function addUpdate(input: Omit<Update, "id" | "createdAt">) {
-  const s = ensure();
   const update: Update = { ...input, id: uid(), createdAt: Date.now() };
-  commit({ ...s, updates: [update, ...s.updates] });
+  commit({ ...state, updates: [update, ...state.updates] });
+  remote((sb) => sb.from("updates").insert(updateToRow(update)));
 }
 
 export function deleteUpdate(id: string) {
-  const s = ensure();
-  commit({ ...s, updates: s.updates.filter((u) => u.id !== id) });
+  commit({ ...state, updates: state.updates.filter((u) => u.id !== id) });
+  remote((sb) => sb.from("updates").delete().eq("id", id));
 }
 
 export function addNote(input: Omit<Note, "id" | "createdAt">) {
-  const s = ensure();
   const note: Note = { ...input, id: uid(), createdAt: Date.now() };
-  commit({ ...s, notes: [note, ...s.notes] });
+  commit({ ...state, notes: [note, ...state.notes] });
+  remote((sb) => sb.from("notes").insert(noteToRow(note)));
 }
 
 export function deleteNote(id: string) {
-  const s = ensure();
-  commit({ ...s, notes: s.notes.filter((n) => n.id !== id) });
+  commit({ ...state, notes: state.notes.filter((n) => n.id !== id) });
+  remote((sb) => sb.from("notes").delete().eq("id", id));
 }
 
-export function sendNotification(input: Omit<AppNotification, "id" | "createdAt" | "read">) {
-  const s = ensure();
+export function sendNotification(
+  input: Omit<AppNotification, "id" | "createdAt" | "read">
+) {
   const n: AppNotification = {
     ...input,
     id: uid(),
     read: false,
     createdAt: Date.now(),
   };
-  commit({ ...s, notifications: [n, ...s.notifications] });
+  commit({ ...state, notifications: [n, ...state.notifications] });
+  remote((sb) => sb.from("notifications").insert(notificationToRow(n)));
 }
 
 export function markNotificationRead(id: string) {
-  const s = ensure();
   commit({
-    ...s,
-    notifications: s.notifications.map((n) =>
+    ...state,
+    notifications: state.notifications.map((n) =>
       n.id === id ? { ...n, read: true } : n
     ),
   });
+  remote((sb) => sb.from("notifications").update({ read: true }).eq("id", id));
 }
 
 export function markAllNotificationsRead() {
-  const s = ensure();
   commit({
-    ...s,
-    notifications: s.notifications.map((n) => ({ ...n, read: true })),
+    ...state,
+    notifications: state.notifications.map((n) => ({ ...n, read: true })),
   });
+  remote((sb) =>
+    sb.from("notifications").update({ read: true }).eq("read", false)
+  );
 }
 
 export function addMessage(input: Omit<ChatMessage, "id" | "createdAt">) {
-  const s = ensure();
   const m: ChatMessage = { ...input, id: uid(), createdAt: Date.now() };
-  commit({ ...s, messages: [...s.messages, m] });
-}
-
-export function resetAll() {
-  commit(seed());
+  commit({ ...state, messages: [...state.messages, m] });
+  remote((sb) => sb.from("messages").insert(messageToRow(m)));
 }

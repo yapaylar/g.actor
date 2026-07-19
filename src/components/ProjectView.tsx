@@ -12,6 +12,7 @@ import {
   sendNotification,
   updateProject,
   useStore,
+  useStoreReady,
 } from "@/lib/store";
 import { useIdentity } from "@/lib/identity";
 import type { Attachment, Note, Project, Update, UpdateKind } from "@/lib/types";
@@ -35,6 +36,7 @@ type Tab = "updates" | "notes" | "files";
 
 export function ProjectView({ projectId }: { projectId: string }) {
   const { projects, updates, notes, messages } = useStore();
+  const ready = useStoreReady();
   const me = useIdentity();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -56,6 +58,16 @@ export function ProjectView({ projectId }: { projectId: string }) {
     .sort((a, b) => b.createdAt - a.createdAt);
 
   if (!project) {
+    if (!ready) {
+      return (
+        <div className="min-h-screen">
+          <TopBar />
+          <div className="flex px-6 py-32 justify-center">
+            <p className="eyebrow animate-pulse text-subtle">[ loading ]</p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="min-h-screen">
         <TopBar />

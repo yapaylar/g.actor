@@ -86,18 +86,17 @@ begin
 end $$;
 
 -- ---------- Realtime ----------
--- Live team chat + instant updates across open tabs.
+-- Everything streams live so every open client stays in sync.
 
 do $$
+declare t text;
 begin
-  alter publication supabase_realtime add table messages;
-exception when duplicate_object then null;
-end $$;
-
-do $$
-begin
-  alter publication supabase_realtime add table notifications;
-exception when duplicate_object then null;
+  foreach t in array array['projects','updates','notes','notifications','messages'] loop
+    begin
+      execute format('alter publication supabase_realtime add table %I', t);
+    exception when duplicate_object then null;
+    end;
+  end loop;
 end $$;
 
 -- ---------- Storage ----------

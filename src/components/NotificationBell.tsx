@@ -29,10 +29,10 @@ export function NotificationBell() {
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="relative grid h-9 w-9 place-items-center rounded-lg border border-border bg-surface text-muted transition hover:text-foreground hover:border-border-strong"
+        className="relative grid h-8 w-8 place-items-center rounded-md border border-border bg-surface text-muted transition hover:text-foreground hover:border-border-strong"
         aria-label="Notifications"
       >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
           <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
           <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
         </svg>
@@ -45,8 +45,8 @@ export function NotificationBell() {
 
       {open && (
         <div className="absolute right-0 top-11 z-50 w-80 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-xl animate-pop-in">
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
-            <span className="text-sm font-semibold">Notifications</span>
+          <div className="flex items-center justify-between border-b border-dashed border-border-strong px-4 py-3">
+            <span className="eyebrow text-muted">[ Notifications ]</span>
             {unread > 0 && (
               <button
                 onClick={markAllNotificationsRead}

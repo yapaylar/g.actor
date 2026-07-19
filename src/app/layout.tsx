@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "g-world",
+  title: "g.actor",
   description: "The home for your team's projects.",
 };
 

@@ -26,16 +26,13 @@ export function ChatPanel({ project }: { project: Project }) {
 
   return (
     <aside className="flex h-[calc(100vh-3.5rem)] w-full flex-col border-l border-border bg-surface">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
-        <div className="flex items-center gap-2">
-          <span className="grid h-6 w-6 place-items-center rounded-md bg-foreground text-background">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-          </span>
-          <span className="text-sm font-semibold">Team chat</span>
-        </div>
-        <span className="text-[11px] text-subtle">{project.name}</span>
+      <div className="flex items-center justify-between border-b border-dashed border-border-strong px-4 py-3.5">
+        <span className="eyebrow" style={{ color: project.accent }}>
+          [ Team chat ]
+        </span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-subtle">
+          {project.name}
+        </span>
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
@@ -67,9 +64,10 @@ export function ChatPanel({ project }: { project: Project }) {
                   <div
                     className={`mt-1 inline-block whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${
                       mine
-                        ? "bg-foreground text-background rounded-tr-sm"
-                        : "bg-background text-foreground rounded-tl-sm"
+                        ? "rounded-tr-sm text-white"
+                        : "rounded-tl-sm bg-background text-foreground"
                     }`}
+                    style={mine ? { background: project.accent } : undefined}
                   >
                     {m.body}
                   </div>

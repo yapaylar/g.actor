@@ -19,7 +19,9 @@ import { StatusBadge } from "./StatusBadge";
 import { ChatPanel } from "./ChatPanel";
 import { NotificationComposer } from "./NotificationComposer";
 import { AttachmentEditor, AttachmentView } from "./Attachments";
-import { GlassSphere } from "./GlassSphere";
+import { IsoBadge } from "./IsoBadge";
+import { LinkChip } from "./ProjectStack";
+import { NewProjectModal } from "./NewProjectModal";
 
 const KIND_META: Record<UpdateKind, { label: string; color: string }> = {
   update: { label: "Update", color: "#4f46e5" },
@@ -38,6 +40,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
   );
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
 
   const project = projects.find((p) => p.id === projectId);
 
@@ -58,7 +61,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
             It may have been removed or never existed.
           </p>
           <Link href="/" className="btn-primary mt-6">
-            Back to g-world
+            Back to g.actor
           </Link>
         </div>
       </div>
@@ -73,31 +76,25 @@ export function ProjectView({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div
+      className="flex min-h-screen flex-col"
+      style={{ "--accent": project.accent } as React.CSSProperties}
+    >
       <TopBar />
 
       <div className="flex flex-1">
         <main className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl px-6 py-8">
-            <Link
-              href="/"
-              className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface py-1 pl-1 pr-3 transition hover:border-border-strong"
-            >
-              <span className="grid h-7 w-7 place-items-center rounded-md bg-foreground text-background">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 11.5 12 4l9 7.5M5 10v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" />
-                </svg>
-              </span>
-              <span className="text-sm font-medium">home</span>
-            </Link>
-
             {/* Header */}
-            <div className="mt-5 animate-fade-up">
+            <div className="animate-fade-up">
               <div className="flex items-start gap-4">
-                <GlassSphere
+                <IsoBadge
                   logo={project.logo}
+                  logos={project.logos}
+                  wide={project.logoWide}
                   fallback={project.initials}
-                  size={56}
+                  accent={project.accent}
+                  size={64}
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-3">
@@ -137,6 +134,18 @@ export function ProjectView({ projectId }: { projectId: string }) {
                   {menuOpen && (
                     <div className="absolute right-0 top-11 z-30 w-40 overflow-hidden rounded-xl border border-border-strong bg-surface shadow-xl animate-pop-in">
                       <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setEditOpen(true);
+                        }}
+                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm transition hover:bg-background"
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                        </svg>
+                        Edit project
+                      </button>
+                      <button
                         onClick={remove}
                         className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-background"
                       >
@@ -150,13 +159,26 @@ export function ProjectView({ projectId }: { projectId: string }) {
                 </div>
               </div>
 
+              {(project.links?.length ?? 0) > 0 && (
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  {project.links!.map((l) => (
+                    <LinkChip key={`${l.label}-${l.url}`} link={l} />
+                  ))}
+                </div>
+              )}
+
               {project.description && (
-                <p className="mt-4 rounded-xl border border-border bg-surface px-4 py-3 text-sm leading-relaxed text-muted">
+                <p
+                  className="mt-4 border-l border-dashed py-0.5 pl-4 text-sm leading-relaxed text-muted"
+                  style={{
+                    borderColor: `color-mix(in srgb, ${project.accent} 45%, var(--border-strong))`,
+                  }}
+                >
                   {project.description}
                 </p>
               )}
 
-              <p className="mt-3 text-xs text-subtle">
+              <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-subtle">
                 Created {formatDate(project.createdAt)}
               </p>
             </div>
@@ -166,12 +188,14 @@ export function ProjectView({ projectId }: { projectId: string }) {
               <TabButton
                 active={tab === "updates"}
                 onClick={() => setTab("updates")}
+                index={1}
                 label="Updates"
                 count={projectUpdates.length}
               />
               <TabButton
                 active={tab === "notes"}
                 onClick={() => setTab("notes")}
+                index={2}
                 label="Notes & comments"
                 count={projectNotes.length}
               />
@@ -201,6 +225,11 @@ export function ProjectView({ projectId }: { projectId: string }) {
         open={notifyOpen}
         onClose={() => setNotifyOpen(false)}
       />
+      <NewProjectModal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        project={project}
+      />
     </div>
   );
 }
@@ -208,26 +237,31 @@ export function ProjectView({ projectId }: { projectId: string }) {
 function TabButton({
   active,
   onClick,
+  index,
   label,
   count,
 }: {
   active: boolean;
   onClick: () => void;
+  index: number;
   label: string;
   count: number;
 }) {
   return (
     <button
       onClick={onClick}
-      className={`-mb-px border-b-2 px-3 pb-2.5 pt-1 text-sm font-medium transition ${
+      className={`-mb-px flex items-center gap-2 border-b-2 px-3 pb-2.5 pt-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition ${
         active
-          ? "border-foreground text-foreground"
+          ? "border-[var(--accent)] text-foreground"
           : "border-transparent text-muted hover:text-foreground"
       }`}
     >
+      <span className={active ? "text-[var(--accent)]" : "text-subtle"}>
+        {String(index).padStart(2, "0")}
+      </span>
       {label}
       <span
-        className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[11px] ${
+        className={`rounded-full px-1.5 py-0.5 text-[10px] ${
           active ? "bg-foreground text-background" : "bg-border text-subtle"
         }`}
       >
@@ -349,13 +383,13 @@ function UpdatesTab({
                   style={{ background: KIND_META[u.kind].color }}
                 />
                 {i < updates.length - 1 && (
-                  <span className="mt-1 w-px flex-1 bg-border" />
+                  <span className="mt-1 w-0 flex-1 border-l border-dashed border-border-strong" />
                 )}
               </div>
-              <div className="group min-w-0 flex-1 rounded-xl border border-border bg-surface p-4 transition hover:border-border-strong">
+              <div className="group accent-card min-w-0 flex-1 rounded-xl p-4">
                 <div className="flex items-center gap-2">
                   <span
-                    className="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white"
+                    className="rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-wide text-white"
                     style={{ background: KIND_META[u.kind].color }}
                   >
                     {KIND_META[u.kind].label}
@@ -448,7 +482,7 @@ function NotesTab({
           {notes.map((n) => (
             <div
               key={n.id}
-              className="group flex gap-3 rounded-xl border border-border bg-surface p-4 transition hover:border-border-strong"
+              className="group accent-card flex gap-3 rounded-xl p-4"
             >
               <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-background text-xs font-semibold text-muted">
                 {n.author.slice(0, 2).toUpperCase()}

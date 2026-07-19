@@ -24,6 +24,8 @@ export interface Project {
   accent: string; // hex accent color
   status: "active" | "planning" | "paused";
   logo?: string; // path under /public
+  logoWide?: boolean; // wordmark-style logo, rendered wider
+  logos?: string[]; // multiple marks rendered side by side (e.g. Social)
   links?: ProjectLink[];
   createdAt: number;
 }

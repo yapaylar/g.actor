@@ -212,8 +212,8 @@ export function CommandPalette() {
           ) : (
             groups.map((group) => (
               <div key={group}>
-                <p className="px-3 pb-1 pt-3 text-[11px] font-medium uppercase tracking-wide text-subtle">
-                  {group}
+                <p className="px-3 pb-1 pt-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-subtle">
+                  [ {group} ]
                 </p>
                 {items.map((item, i) =>
                   item.group === group ? (

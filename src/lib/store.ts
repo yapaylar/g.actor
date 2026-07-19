@@ -10,7 +10,7 @@ import type {
   Update,
 } from "./types";
 
-const STORAGE_KEY = "g-world:state:v3";
+const STORAGE_KEY = "g-world:state:v5";
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -27,28 +27,29 @@ function seed(): AppState {
       id: "g-act",
       name: "G-ACT",
       initials: "GA",
-      tagline: "Action & operations engine",
+      tagline: "Global cardiovascular access",
       description:
-        "The operational backbone — turning plans into shipped actions across the team.",
+        "Building cardiovascular access systems — earlier detection, expanded diagnostic capacity, and evidence that improves outcomes at scale.",
       accent: "#4f46e5",
       status: "active",
       logo: "/g-actfavicon.png",
-      links: [{ label: "g-act.org", url: "https://g-act.org" }],
+      links: [{ label: "Website", url: "https://g-act.org" }],
       createdAt: now - 40 * day,
     },
     {
       id: "v-loop",
       name: "V-loop",
       initials: "VL",
-      tagline: "Feedback & iteration loop",
+      tagline: "Community front door to structural heart care",
       description:
-        "A continuous loop for capturing signal, iterating fast, and closing the feedback gap.",
+        "A standardized, AI-enabled pathway that identifies structural heart disease in the community and connects every patient to specialty care.",
       accent: "#0ea5e9",
       status: "active",
+      logo: "/vloop-logo.svg",
+      logoWide: true,
       links: [
-        { label: "v-loop.health", url: "https://v-loop.health" },
-        { label: "v-loop.com", url: "https://v-loop.com" },
-        { label: "v-loop.org", url: "https://v-loop.org" },
+        { label: "Website", url: "https://v-loop.health" },
+        { label: "VLOOP App", url: "https://v-loop.health" },
       ],
       createdAt: now - 28 * day,
     },
@@ -56,13 +57,34 @@ function seed(): AppState {
       id: "heartlink",
       name: "Heartlink",
       initials: "HL",
-      tagline: "Connection & relationships",
+      tagline: "Training & education platform",
       description:
-        "Building genuine, lasting links between people — the heart of the product.",
+        "Heartlink+ modules and the LMS — training the workforce behind the cardiovascular access network.",
       accent: "#ec4899",
-      status: "planning",
-      links: [{ label: "heartlink.plus", url: "https://heartlink.plus" }],
+      status: "active",
+      logo: "/hlplogo.png",
+      logoWide: true,
+      links: [
+        { label: "Website", url: "https://heartlink.plus" },
+        { label: "Heartlink+ App", url: "https://heartlink.plus" },
+        { label: "LMS System", url: "https://heartlink.plus" },
+      ],
       createdAt: now - 14 * day,
+    },
+    {
+      id: "regnova",
+      name: "Regnova",
+      initials: "RG",
+      tagline: "Ghana medical device registration",
+      description:
+        "On-the-ground partner for Ghana FDA approvals, compliant distribution, and post-market surveillance.",
+      accent: "#10b981",
+      status: "active",
+      links: [
+        { label: "Website", url: "https://regnovagh.com" },
+        { label: "Portal", url: "https://portal.regnovagh.com" },
+      ],
+      createdAt: now - 10 * day,
     },
     {
       id: "social",
@@ -73,6 +95,7 @@ function seed(): AppState {
         "One home to plan, schedule, and manage every social channel for the team.",
       accent: "#f59e0b",
       status: "planning",
+      logos: ["/linkedin-logo.svg", "/x-logo.svg"],
       links: [
         { label: "LinkedIn", url: "https://linkedin.com" },
         { label: "X", url: "https://x.com" },
@@ -120,6 +143,15 @@ function seed(): AppState {
     },
     {
       id: uid(),
+      projectId: "regnova",
+      author: "Berker",
+      title: "Website & portal are live",
+      body: "regnovagh.com is up with the full service catalog, and the client portal is running at portal.regnovagh.com.",
+      kind: "release",
+      createdAt: now - 2 * day,
+    },
+    {
+      id: uid(),
       projectId: "social",
       author: "Berker",
       title: "Channels we want to manage",
@@ -164,6 +196,32 @@ function seed(): AppState {
 let state: AppState | null = null;
 const listeners = new Set<() => void>();
 
+/**
+ * Stored state can predate seed changes (logos etc.). Refresh the visual
+ * fields of seed projects in place without touching user-created content.
+ */
+function syncSeedVisuals(stored: AppState): AppState {
+  const seedProjects = new Map(seed().projects.map((p) => [p.id, p]));
+  let changed = false;
+  const projects = stored.projects.map((p) => {
+    const s = seedProjects.get(p.id);
+    if (!s) return p;
+    if (
+      p.logo !== s.logo ||
+      p.logoWide !== s.logoWide ||
+      JSON.stringify(p.logos) !== JSON.stringify(s.logos)
+    ) {
+      changed = true;
+      return { ...p, logo: s.logo, logoWide: s.logoWide, logos: s.logos };
+    }
+    return p;
+  });
+  if (!changed) return stored;
+  const next = { ...stored, projects };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return next;
+}
+
 function load(): AppState {
   if (typeof window === "undefined") return emptyState();
   try {
@@ -173,7 +231,8 @@ function load(): AppState {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(seeded));
       return seeded;
     }
-    return JSON.parse(raw) as AppState;
+    const stored = JSON.parse(raw) as AppState;
+    return syncSeedVisuals(stored);
   } catch {
     return seed();
   }
@@ -232,33 +291,67 @@ export function useStore(): AppState {
 
 // ---- Mutations ----
 
-export function addProject(input: {
-  name: string;
-  tagline: string;
-  description: string;
-  accent: string;
-}): Project {
-  const s = ensure();
-  const initials =
-    input.name
+function initialsOf(name: string): string {
+  return (
+    name
       .trim()
       .split(/\s+/)
       .map((w) => w[0])
       .join("")
       .slice(0, 2)
-      .toUpperCase() || "P";
+      .toUpperCase() || "P"
+  );
+}
+
+export function addProject(input: {
+  name: string;
+  tagline: string;
+  description: string;
+  accent: string;
+  status?: Project["status"];
+  links?: Project["links"];
+}): Project {
+  const s = ensure();
   const project: Project = {
     id: uid(),
     name: input.name.trim() || "Untitled",
-    initials,
+    initials: initialsOf(input.name),
     tagline: input.tagline.trim(),
     description: input.description.trim(),
     accent: input.accent,
-    status: "planning",
+    status: input.status ?? "planning",
+    links: input.links?.length ? input.links : undefined,
     createdAt: Date.now(),
   };
   commit({ ...s, projects: [...s.projects, project] });
   return project;
+}
+
+export function updateProject(
+  projectId: string,
+  patch: Partial<
+    Pick<
+      Project,
+      "name" | "tagline" | "description" | "accent" | "status" | "links"
+    >
+  >
+) {
+  const s = ensure();
+  commit({
+    ...s,
+    projects: s.projects.map((p) => {
+      if (p.id !== projectId) return p;
+      const next = { ...p, ...patch };
+      if (patch.name !== undefined) {
+        next.name = patch.name.trim() || p.name;
+        next.initials = initialsOf(next.name);
+      }
+      if (patch.links !== undefined) {
+        next.links = patch.links.length ? patch.links : undefined;
+      }
+      return next;
+    }),
+  });
 }
 
 export function deleteProject(projectId: string) {

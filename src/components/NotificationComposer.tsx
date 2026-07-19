@@ -59,7 +59,7 @@ export function NotificationComposer({
         <>
           <div className="space-y-4">
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-muted">
+              <span className="form-label">
                 Title
               </span>
               <input
@@ -71,7 +71,7 @@ export function NotificationComposer({
               />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-xs font-medium text-muted">
+              <span className="form-label">
                 Message
               </span>
               <textarea
@@ -83,7 +83,7 @@ export function NotificationComposer({
               />
             </label>
             <div>
-              <span className="mb-1.5 block text-xs font-medium text-muted">
+              <span className="form-label">
                 Audience
               </span>
               <div className="flex flex-wrap gap-2">

@@ -23,14 +23,16 @@ $$;
 
 create or replace function public.is_team_member() returns boolean
 language sql stable security definer set search_path = public as $$
-  select exists (select 1 from team_members where email = public.jwt_email())
+  select exists (
+    select 1 from team_members where lower(email) = public.jwt_email()
+  )
 $$;
 
 create or replace function public.is_owner() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (
     select 1 from team_members
-    where email = public.jwt_email() and role = 'owner'
+    where lower(email) = public.jwt_email() and role = 'owner'
   )
 $$;
 
@@ -47,13 +49,13 @@ create policy "owner insert" on team_members
 drop policy if exists "owner delete" on team_members;
 create policy "owner delete" on team_members
   for delete to authenticated
-  using (public.is_owner() and email <> public.jwt_email());
+  using (public.is_owner() and lower(email) <> public.jwt_email());
 
 drop policy if exists "self or owner update" on team_members;
 create policy "self or owner update" on team_members
   for update to authenticated
-  using (public.is_owner() or email = public.jwt_email())
-  with check (public.is_owner() or email = public.jwt_email());
+  using (public.is_owner() or lower(email) = public.jwt_email())
+  with check (public.is_owner() or lower(email) = public.jwt_email());
 
 -- Members may edit their own row (name), but only owners may change roles.
 create or replace function public.guard_role_change() returns trigger

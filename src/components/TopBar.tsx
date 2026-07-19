@@ -29,18 +29,20 @@ export function TopBar() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
-      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-6">
-        <div className="flex items-center gap-4">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 sm:px-6">
+        <div className="flex items-center gap-2.5 sm:gap-4">
           <Link href="/" className="group flex items-center gap-2.5">
             <span className="brand-mark" aria-hidden />
-            <span className="eyebrow text-foreground">g.actor</span>
+            <span className="eyebrow whitespace-nowrap text-foreground">
+              g.actor
+            </span>
           </Link>
           {pathname !== "/" && (
             <>
               <span className="h-4 w-px bg-border-strong" aria-hidden />
               <Link
                 href="/"
-                className="eyebrow text-subtle transition-colors hover:text-foreground"
+                className="eyebrow whitespace-nowrap text-subtle transition-colors hover:text-foreground"
               >
                 [ home ]
               </Link>

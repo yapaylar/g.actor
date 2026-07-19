@@ -9,13 +9,14 @@ import {
   deleteNote,
   deleteProject,
   deleteUpdate,
+  sendNotification,
+  updateProject,
   useStore,
 } from "@/lib/store";
 import { useIdentity } from "@/lib/identity";
-import type { Attachment, UpdateKind } from "@/lib/types";
+import type { Attachment, Note, Project, Update, UpdateKind } from "@/lib/types";
 import { formatDate, timeAgo } from "@/lib/util";
 import { TopBar } from "./TopBar";
-import { StatusBadge } from "./StatusBadge";
 import { ChatPanel } from "./ChatPanel";
 import { NotificationComposer } from "./NotificationComposer";
 import { AttachmentEditor, AttachmentView } from "./Attachments";
@@ -30,17 +31,20 @@ const KIND_META: Record<UpdateKind, { label: string; color: string }> = {
   blocker: { label: "Blocker", color: "#ef4444" },
 };
 
+type Tab = "updates" | "notes" | "files";
+
 export function ProjectView({ projectId }: { projectId: string }) {
-  const { projects, updates, notes } = useStore();
+  const { projects, updates, notes, messages } = useStore();
   const me = useIdentity();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<"updates" | "notes">(
+  const [tab, setTab] = useState<Tab>(
     searchParams.get("tab") === "notes" ? "notes" : "updates"
   );
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const project = projects.find((p) => p.id === projectId);
 
@@ -75,6 +79,16 @@ export function ProjectView({ projectId }: { projectId: string }) {
     }
   };
 
+  const fileCount =
+    projectUpdates.reduce((n, u) => n + (u.attachments?.length ?? 0), 0) +
+    projectNotes.reduce((n, x) => n + (x.attachments?.length ?? 0), 0);
+  const lastActivity = Math.max(
+    0,
+    ...projectUpdates.map((u) => u.createdAt),
+    ...projectNotes.map((n) => n.createdAt),
+    ...messages.filter((m) => m.projectId === projectId).map((m) => m.createdAt)
+  );
+
   return (
     <div
       className="flex min-h-screen flex-col"
@@ -84,10 +98,15 @@ export function ProjectView({ projectId }: { projectId: string }) {
 
       <div className="flex flex-1">
         <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl px-6 py-8">
+          <div className="mx-auto max-w-3xl px-4 py-6 pb-24 sm:px-6 sm:py-8 lg:pb-8">
             {/* Header */}
-            <div className="animate-fade-up">
-              <div className="flex items-start gap-4">
+            <div
+              className="animate-fade-up relative overflow-hidden rounded-2xl border border-border px-4 py-4 sm:px-6 sm:py-5"
+              style={{
+                background: `linear-gradient(135deg, color-mix(in srgb, ${project.accent} 8%, var(--surface)) 0%, var(--surface) 60%)`,
+              }}
+            >
+              <div className="flex flex-wrap items-start gap-3 sm:gap-4">
                 <IsoBadge
                   logo={project.logo}
                   logos={project.logos}
@@ -96,14 +115,17 @@ export function ProjectView({ projectId }: { projectId: string }) {
                   accent={project.accent}
                   size={64}
                 />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-3">
-                    <h1 className="truncate text-2xl font-semibold tracking-tight">
-                      {project.name}
-                    </h1>
-                    <StatusBadge status={project.status} />
-                  </div>
-                  <p className="mt-1 text-[15px] text-muted">
+                <div className="min-w-0 flex-1 basis-40">
+                  <p
+                    className="eyebrow whitespace-nowrap"
+                    style={{ color: project.accent }}
+                  >
+                    [ {project.status} layer ]
+                  </p>
+                  <h1 className="mt-0.5 truncate text-xl font-semibold tracking-tight sm:text-2xl">
+                    {project.name}
+                  </h1>
+                  <p className="mt-0.5 text-sm text-muted sm:text-[15px]">
                     {project.tagline}
                   </p>
                 </div>
@@ -111,7 +133,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
                 <div className="relative flex items-center gap-2">
                   <button
                     onClick={() => setNotifyOpen(true)}
-                    className="btn-primary"
+                    className="btn-ghost"
                   >
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
@@ -167,24 +189,36 @@ export function ProjectView({ projectId }: { projectId: string }) {
                 </div>
               )}
 
-              {project.description && (
-                <p
-                  className="mt-4 border-l border-dashed py-0.5 pl-4 text-sm leading-relaxed text-muted"
-                  style={{
-                    borderColor: `color-mix(in srgb, ${project.accent} 45%, var(--border-strong))`,
-                  }}
-                >
-                  {project.description}
-                </p>
-              )}
-
-              <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-subtle">
-                Created {formatDate(project.createdAt)}
-              </p>
+              {/* Stats strip */}
+              <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-dashed border-border-strong pt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-subtle">
+                <Stat label="Updates" value={String(projectUpdates.length).padStart(2, "0")} accent={project.accent} />
+                <Stat label="Notes" value={String(projectNotes.length).padStart(2, "0")} accent={project.accent} />
+                <Stat label="Files" value={String(fileCount).padStart(2, "0")} accent={project.accent} />
+                <Stat
+                  label="Last activity"
+                  value={lastActivity ? timeAgo(lastActivity) : "—"}
+                  accent={project.accent}
+                />
+                <Stat label="Created" value={formatDate(project.createdAt)} accent={project.accent} />
+              </div>
             </div>
 
+            {/* Now / focus band */}
+            <FocusBand project={project} />
+
+            {project.description && (
+              <p
+                className="mt-5 border-l border-dashed py-0.5 pl-4 text-sm leading-relaxed text-muted"
+                style={{
+                  borderColor: `color-mix(in srgb, ${project.accent} 45%, var(--border-strong))`,
+                }}
+              >
+                {project.description}
+              </p>
+            )}
+
             {/* Tabs */}
-            <div className="mt-8 flex items-center gap-1 border-b border-border">
+            <div className="mt-6 flex items-center gap-1 overflow-x-auto border-b border-border">
               <TabButton
                 active={tab === "updates"}
                 onClick={() => setTab("updates")}
@@ -196,20 +230,29 @@ export function ProjectView({ projectId }: { projectId: string }) {
                 active={tab === "notes"}
                 onClick={() => setTab("notes")}
                 index={2}
-                label="Notes & comments"
+                label="Notes"
                 count={projectNotes.length}
+              />
+              <TabButton
+                active={tab === "files"}
+                onClick={() => setTab("files")}
+                index={3}
+                label="Files"
+                count={fileCount}
               />
             </div>
 
-            <div className="py-6">
+            <div className="py-5">
               {tab === "updates" ? (
                 <UpdatesTab
-                  projectId={project.id}
+                  project={project}
                   me={me}
                   updates={projectUpdates}
                 />
-              ) : (
+              ) : tab === "notes" ? (
                 <NotesTab projectId={project.id} me={me} notes={projectNotes} />
+              ) : (
+                <FilesTab updates={projectUpdates} notes={projectNotes} />
               )}
             </div>
           </div>
@@ -219,6 +262,29 @@ export function ProjectView({ projectId }: { projectId: string }) {
           <ChatPanel project={project} />
         </div>
       </div>
+
+      {/* Mobile chat: floating button + bottom sheet */}
+      <button
+        onClick={() => setChatOpen(true)}
+        className="fixed bottom-5 right-5 z-40 grid h-12 w-12 place-items-center rounded-full text-white shadow-lg transition active:scale-95 lg:hidden"
+        style={{ background: project.accent }}
+        aria-label="Open team chat"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      </button>
+      {chatOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div
+            className="absolute inset-0 bg-black/30 backdrop-blur-[2px] animate-fade-up"
+            onClick={() => setChatOpen(false)}
+          />
+          <div className="absolute inset-x-0 bottom-0 h-[78dvh] overflow-hidden rounded-t-2xl border-t border-border-strong bg-surface shadow-2xl animate-fade-up">
+            <ChatPanel project={project} onClose={() => setChatOpen(false)} />
+          </div>
+        </div>
+      )}
 
       <NotificationComposer
         project={project}
@@ -230,6 +296,104 @@ export function ProjectView({ projectId }: { projectId: string }) {
         onClose={() => setEditOpen(false)}
         project={project}
       />
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string;
+  accent: string;
+}) {
+  return (
+    <span className="inline-flex items-baseline gap-1.5 whitespace-nowrap">
+      {label}
+      <span className="font-semibold" style={{ color: accent }}>
+        {value}
+      </span>
+    </span>
+  );
+}
+
+function FocusBand({ project }: { project: Project }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const save = () => {
+    updateProject(project.id, { focus: draft });
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <div
+        className="mt-4 flex items-center gap-2 rounded-xl border border-dashed px-4 py-3"
+        style={{
+          borderColor: `color-mix(in srgb, ${project.accent} 50%, var(--border-strong))`,
+        }}
+      >
+        <span className="eyebrow shrink-0" style={{ color: project.accent }}>
+          [ Now ]
+        </span>
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+            if (e.key === "Escape") setEditing(false);
+          }}
+          placeholder="What is the team on right now?"
+          className="w-full bg-transparent text-sm outline-none placeholder:text-subtle"
+        />
+      </div>
+    );
+  }
+
+  if (!project.focus) {
+    return (
+      <button
+        onClick={() => {
+          setDraft("");
+          setEditing(true);
+        }}
+        className="mt-4 flex w-full items-center gap-2 rounded-xl border border-dashed border-border-strong px-4 py-3 text-left text-sm text-subtle transition hover:border-foreground hover:text-foreground"
+      >
+        <span className="eyebrow shrink-0">[ Now ]</span>
+        Set the current focus…
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="group mt-4 flex items-center gap-3 rounded-xl border border-dashed px-4 py-3"
+      style={{
+        borderColor: `color-mix(in srgb, ${project.accent} 50%, var(--border-strong))`,
+        background: `color-mix(in srgb, ${project.accent} 4%, var(--surface))`,
+      }}
+    >
+      <span className="eyebrow shrink-0" style={{ color: project.accent }}>
+        [ Now ]
+      </span>
+      <p className="min-w-0 flex-1 text-sm font-medium">{project.focus}</p>
+      <button
+        onClick={() => {
+          setDraft(project.focus ?? "");
+          setEditing(true);
+        }}
+        className="shrink-0 text-subtle transition hover:text-foreground sm:opacity-0 sm:group-hover:opacity-100"
+        aria-label="Edit focus"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+        </svg>
+      </button>
     </div>
   );
 }
@@ -250,13 +414,17 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`-mb-px flex items-center gap-2 border-b-2 px-3 pb-2.5 pt-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition ${
+      className={`-mb-px flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-2 pb-2.5 pt-1 font-mono text-xs font-semibold uppercase tracking-[0.12em] transition sm:gap-2 sm:px-3 ${
         active
           ? "border-[var(--accent)] text-foreground"
           : "border-transparent text-muted hover:text-foreground"
       }`}
     >
-      <span className={active ? "text-[var(--accent)]" : "text-subtle"}>
+      <span
+        className={`hidden sm:inline ${
+          active ? "text-[var(--accent)]" : "text-subtle"
+        }`}
+      >
         {String(index).padStart(2, "0")}
       </span>
       {label}
@@ -272,36 +440,54 @@ function TabButton({
 }
 
 function UpdatesTab({
-  projectId,
+  project,
   me,
   updates,
 }: {
-  projectId: string;
+  project: Project;
   me: string;
-  updates: ReturnType<typeof useStore>["updates"];
+  updates: Update[];
 }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [kind, setKind] = useState<UpdateKind>("update");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [notifyTeam, setNotifyTeam] = useState(false);
+  const [filter, setFilter] = useState<UpdateKind | "all">("all");
 
   const submit = () => {
     if (!title.trim()) return;
     addUpdate({
-      projectId,
+      projectId: project.id,
       author: me,
       title: title.trim(),
       body: body.trim(),
       kind,
       attachments: attachments.length ? attachments : undefined,
     });
+    if (notifyTeam) {
+      sendNotification({
+        projectId: project.id,
+        title: `${project.name}: ${title.trim()}`,
+        body: body.trim() || KIND_META[kind].label,
+        audience: "Team",
+      });
+    }
     setTitle("");
     setBody("");
     setKind("update");
     setAttachments([]);
+    setNotifyTeam(false);
     setOpen(false);
   };
+
+  const kindCounts = updates.reduce(
+    (acc, u) => ({ ...acc, [u.kind]: (acc[u.kind] ?? 0) + 1 }),
+    {} as Partial<Record<UpdateKind, number>>
+  );
+  const visible =
+    filter === "all" ? updates : updates.filter((u) => u.kind === filter);
 
   return (
     <div>
@@ -355,6 +541,15 @@ function UpdatesTab({
               </button>
             </div>
           </div>
+          <label className="mt-3 flex w-fit cursor-pointer items-center gap-2 font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
+            <input
+              type="checkbox"
+              checked={notifyTeam}
+              onChange={(e) => setNotifyTeam(e.target.checked)}
+              className="h-3.5 w-3.5 accent-[var(--accent)]"
+            />
+            Also notify the team
+          </label>
         </div>
       ) : (
         <button
@@ -368,6 +563,29 @@ function UpdatesTab({
         </button>
       )}
 
+      {updates.length > 1 && (
+        <div className="mb-5 flex flex-wrap items-center gap-1.5">
+          <FilterChip
+            label="All"
+            count={updates.length}
+            active={filter === "all"}
+            onClick={() => setFilter("all")}
+          />
+          {(Object.keys(KIND_META) as UpdateKind[])
+            .filter((k) => kindCounts[k])
+            .map((k) => (
+              <FilterChip
+                key={k}
+                label={KIND_META[k].label}
+                count={kindCounts[k]!}
+                color={KIND_META[k].color}
+                active={filter === k}
+                onClick={() => setFilter(filter === k ? "all" : k)}
+              />
+            ))}
+        </div>
+      )}
+
       {updates.length === 0 ? (
         <EmptyState
           title="No updates yet"
@@ -375,14 +593,14 @@ function UpdatesTab({
         />
       ) : (
         <ol className="relative space-y-1">
-          {updates.map((u, i) => (
+          {visible.map((u, i) => (
             <li key={u.id} className="relative flex gap-4 pb-6">
               <div className="flex flex-col items-center">
                 <span
                   className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full ring-4 ring-background"
                   style={{ background: KIND_META[u.kind].color }}
                 />
-                {i < updates.length - 1 && (
+                {i < visible.length - 1 && (
                   <span className="mt-1 w-0 flex-1 border-l border-dashed border-border-strong" />
                 )}
               </div>
@@ -423,6 +641,40 @@ function UpdatesTab({
   );
 }
 
+function FilterChip({
+  label,
+  count,
+  color,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  color?: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
+        active
+          ? "border-foreground bg-foreground text-background"
+          : "border-border-strong bg-surface text-muted hover:text-foreground"
+      }`}
+    >
+      {color && (
+        <span
+          className="h-1.5 w-1.5 rounded-full"
+          style={{ background: color }}
+        />
+      )}
+      {label}
+      <span className={active ? "opacity-70" : "text-subtle"}>{count}</span>
+    </button>
+  );
+}
+
 function NotesTab({
   projectId,
   me,
@@ -430,7 +682,7 @@ function NotesTab({
 }: {
   projectId: string;
   me: string;
-  notes: ReturnType<typeof useStore>["notes"];
+  notes: Note[];
 }) {
   const [body, setBody] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -512,6 +764,83 @@ function NotesTab({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function FilesTab({ updates, notes }: { updates: Update[]; notes: Note[] }) {
+  const items = [
+    ...updates.flatMap((u) =>
+      (u.attachments ?? []).map((a) => ({
+        attachment: a,
+        source: u.title,
+        sourceKind: "Update" as const,
+        author: u.author,
+        createdAt: u.createdAt,
+      }))
+    ),
+    ...notes.flatMap((n) =>
+      (n.attachments ?? []).map((a) => ({
+        attachment: a,
+        source: n.body.slice(0, 60) || "Note",
+        sourceKind: "Note" as const,
+        author: n.author,
+        createdAt: n.createdAt,
+      }))
+    ),
+  ].sort((x, y) => y.createdAt - x.createdAt);
+
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        title="No files yet"
+        subtitle="Images and files attached to updates or notes will be collected here."
+      />
+    );
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {items.map(({ attachment: a, source, sourceKind, author, createdAt }) => (
+        <div key={a.id} className="accent-card overflow-hidden rounded-xl">
+          {a.type.startsWith("image/") ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={a.dataUrl}
+              alt={a.name}
+              className="h-36 w-full border-b border-border object-cover"
+            />
+          ) : (
+            <div className="grid h-20 place-items-center border-b border-dashed border-border bg-background text-subtle">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <path d="M14 2v6h6" />
+              </svg>
+            </div>
+          )}
+          <div className="p-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="min-w-0 truncate text-sm font-medium">{a.name}</p>
+              <a
+                href={a.dataUrl}
+                download={a.name}
+                className="shrink-0 text-subtle transition hover:text-foreground"
+                aria-label={`Download ${a.name}`}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
+                </svg>
+              </a>
+            </div>
+            <p className="mt-1.5 truncate font-mono text-[10px] uppercase tracking-[0.1em] text-subtle">
+              {sourceKind} · {source}
+            </p>
+            <p className="mt-0.5 text-xs text-subtle">
+              {author} · {timeAgo(createdAt)}
+            </p>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

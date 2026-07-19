@@ -6,7 +6,13 @@ import { useIdentity } from "@/lib/identity";
 import type { Project } from "@/lib/types";
 import { timeAgo } from "@/lib/util";
 
-export function ChatPanel({ project }: { project: Project }) {
+export function ChatPanel({
+  project,
+  onClose,
+}: {
+  project: Project;
+  onClose?: () => void;
+}) {
   const { messages } = useStore();
   const me = useIdentity();
   const [text, setText] = useState("");
@@ -25,13 +31,26 @@ export function ChatPanel({ project }: { project: Project }) {
   };
 
   return (
-    <aside className="flex h-[calc(100vh-3.5rem)] w-full flex-col border-l border-border bg-surface">
+    <aside className="flex h-full w-full flex-col border-l border-border bg-surface">
       <div className="flex items-center justify-between border-b border-dashed border-border-strong px-4 py-3.5">
         <span className="eyebrow" style={{ color: project.accent }}>
           [ Team chat ]
         </span>
-        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-subtle">
-          {project.name}
+        <span className="flex items-center gap-3">
+          <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-subtle">
+            {project.name}
+          </span>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="grid h-7 w-7 place-items-center rounded-md text-muted transition hover:bg-background hover:text-foreground"
+              aria-label="Close chat"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </span>
       </div>
 

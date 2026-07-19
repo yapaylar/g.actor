@@ -26,6 +26,7 @@ export interface Project {
   logo?: string; // path under /public
   logoWide?: boolean; // wordmark-style logo, rendered wider
   logos?: string[]; // multiple marks rendered side by side (e.g. Social)
+  focus?: string; // one-line "what we're on right now"
   links?: ProjectLink[];
   createdAt: number;
 }

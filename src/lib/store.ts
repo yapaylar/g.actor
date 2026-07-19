@@ -332,7 +332,13 @@ export function updateProject(
   patch: Partial<
     Pick<
       Project,
-      "name" | "tagline" | "description" | "accent" | "status" | "links"
+      | "name"
+      | "tagline"
+      | "description"
+      | "accent"
+      | "status"
+      | "links"
+      | "focus"
     >
   >
 ) {
@@ -348,6 +354,9 @@ export function updateProject(
       }
       if (patch.links !== undefined) {
         next.links = patch.links.length ? patch.links : undefined;
+      }
+      if (patch.focus !== undefined) {
+        next.focus = patch.focus.trim() || undefined;
       }
       return next;
     }),

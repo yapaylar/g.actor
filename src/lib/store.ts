@@ -200,6 +200,12 @@ function seed(): AppState {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Row = Record<string, any>;
 
+/** Older rows stored the file under `dataUrl` (base64); normalize to `url`. */
+function normalizeAttachments(list: any): Attachment[] | undefined {
+  if (!Array.isArray(list) || list.length === 0) return undefined;
+  return list.map((a: any) => ({ ...a, url: a.url ?? a.dataUrl ?? "" }));
+}
+
 function rowToProject(r: Row): Project {
   return {
     id: r.id,
@@ -244,7 +250,7 @@ function rowToUpdate(r: Row): Update {
     title: r.title,
     body: r.body,
     kind: r.kind,
-    attachments: r.attachments ?? undefined,
+    attachments: normalizeAttachments(r.attachments),
     createdAt: Date.parse(r.created_at),
   };
 }
@@ -268,7 +274,7 @@ function rowToNote(r: Row): Note {
     projectId: r.project_id,
     author: r.author,
     body: r.body,
-    attachments: r.attachments ?? undefined,
+    attachments: normalizeAttachments(r.attachments),
     createdAt: Date.parse(r.created_at),
   };
 }

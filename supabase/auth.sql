@@ -101,5 +101,5 @@ create policy "attachments delete v1" on storage.objects
 -- >>> REPLACE the email below with your own before running <<<
 
 insert into team_members (email, name, role)
-values ('BURAYA-KENDI-EPOSTANI-YAZ@ornek.com', 'Berker', 'owner')
+values ('berker@yapaylar.com', 'Berker', 'owner')
 on conflict (email) do nothing;

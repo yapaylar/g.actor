@@ -4,6 +4,7 @@ import { useSyncExternalStore } from "react";
 import type {
   AppNotification,
   AppState,
+  Attachment,
   ChatMessage,
   Note,
   Project,
@@ -341,6 +342,7 @@ const EMPTY_STATE: AppState = {
 let state: AppState = EMPTY_STATE;
 let started = false;
 let ready = false;
+let remoteLoaded = false;
 const listeners = new Set<() => void>();
 
 function notifyListeners() {
@@ -413,6 +415,7 @@ function loadLocal(): AppState {
 // ---- Remote (Supabase) ----
 
 async function initRemote() {
+  remoteLoaded = true;
   const sb = getSupabase();
   try {
     const [p, u, n, nf, m] = await Promise.all([
@@ -571,17 +574,47 @@ function remote(
   });
 }
 
+/** Best-effort removal of Storage files referenced by deleted content. */
+function removeAttachmentFiles(lists: (Attachment[] | undefined)[]) {
+  if (!supabaseEnabled) return;
+  const paths = lists
+    .flat()
+    .filter((a): a is Attachment => Boolean(a))
+    .map((a) => a.url.split("/object/public/attachments/")[1])
+    .filter((p): p is string => Boolean(p))
+    .map((p) => decodeURIComponent(p));
+  if (paths.length) {
+    remote((sb) => sb.storage.from("attachments").remove(paths));
+  }
+}
+
 // ---- Store bootstrap & hooks ----
 
 function start() {
   if (started || typeof window === "undefined") return;
   started = true;
   if (supabaseEnabled) {
-    void initRemote();
+    // RLS requires a session; wait for auth before fetching. The auth store
+    // calls reloadRemote() as soon as a session appears.
+    void getSupabase()
+      .auth.getSession()
+      .then(({ data }) => {
+        if (data.session) {
+          if (!remoteLoaded) void initRemote();
+        } else {
+          markReady();
+        }
+      });
   } else {
     state = loadLocal();
     ready = true;
   }
+}
+
+/** Called by the auth store once a session is established. */
+export function reloadRemote() {
+  if (!supabaseEnabled || remoteLoaded) return;
+  void initRemote();
 }
 
 function subscribe(listener: () => void): () => void {
@@ -687,6 +720,14 @@ export function updateProject(
 }
 
 export function deleteProject(projectId: string) {
+  removeAttachmentFiles([
+    ...state.updates
+      .filter((u) => u.projectId === projectId)
+      .map((u) => u.attachments),
+    ...state.notes
+      .filter((n) => n.projectId === projectId)
+      .map((n) => n.attachments),
+  ]);
   commit({
     projects: state.projects.filter((p) => p.id !== projectId),
     updates: state.updates.filter((u) => u.projectId !== projectId),
@@ -707,6 +748,9 @@ export function addUpdate(input: Omit<Update, "id" | "createdAt">) {
 }
 
 export function deleteUpdate(id: string) {
+  removeAttachmentFiles([
+    state.updates.find((u) => u.id === id)?.attachments,
+  ]);
   commit({ ...state, updates: state.updates.filter((u) => u.id !== id) });
   remote((sb) => sb.from("updates").delete().eq("id", id));
 }
@@ -718,6 +762,7 @@ export function addNote(input: Omit<Note, "id" | "createdAt">) {
 }
 
 export function deleteNote(id: string) {
+  removeAttachmentFiles([state.notes.find((n) => n.id === id)?.attachments]);
   commit({ ...state, notes: state.notes.filter((n) => n.id !== id) });
   remote((sb) => sb.from("notes").delete().eq("id", id));
 }

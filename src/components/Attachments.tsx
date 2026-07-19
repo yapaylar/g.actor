@@ -2,9 +2,11 @@
 
 import { useRef, useState } from "react";
 import type { Attachment } from "@/lib/types";
+import { getSupabase, supabaseEnabled } from "@/lib/supabase";
 import { Modal } from "./ui/Modal";
 
-const MAX_BYTES = 4 * 1024 * 1024; // 4 MB per file
+// Storage handles large files; localStorage fallback stays conservative.
+const MAX_BYTES = supabaseEnabled ? 25 * 1024 * 1024 : 4 * 1024 * 1024;
 
 function uid() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -16,20 +18,32 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function readFile(file: File): Promise<Attachment> {
+function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () =>
-      resolve({
-        id: uid(),
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        dataUrl: String(reader.result),
-      });
+    reader.onload = () => resolve(String(reader.result));
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+/** Upload to the Storage bucket when configured; base64 fallback otherwise. */
+async function ingestFile(file: File): Promise<Attachment> {
+  const id = uid();
+  let url: string;
+  if (supabaseEnabled) {
+    const sb = getSupabase();
+    const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+    const path = `${id}-${safeName}`;
+    const { error } = await sb.storage
+      .from("attachments")
+      .upload(path, file, { contentType: file.type || "application/octet-stream" });
+    if (error) throw error;
+    url = sb.storage.from("attachments").getPublicUrl(path).data.publicUrl;
+  } else {
+    url = await readAsDataUrl(file);
+  }
+  return { id, name: file.name, type: file.type, size: file.size, url };
 }
 
 export function AttachmentEditor({
@@ -41,18 +55,31 @@ export function AttachmentEditor({
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   const handleFiles = async (list: FileList | null) => {
     if (!list || list.length === 0) return;
-    const next: Attachment[] = [];
-    for (const file of Array.from(list)) {
-      if (file.size > MAX_BYTES) {
-        window.alert(`"${file.name}" is larger than 4 MB and was skipped.`);
-        continue;
+    setUploading(true);
+    try {
+      const next: Attachment[] = [];
+      for (const file of Array.from(list)) {
+        if (file.size > MAX_BYTES) {
+          window.alert(
+            `"${file.name}" is larger than ${formatBytes(MAX_BYTES)} and was skipped.`
+          );
+          continue;
+        }
+        try {
+          next.push(await ingestFile(file));
+        } catch (err) {
+          console.error("Attachment upload failed", err);
+          window.alert(`Couldn't upload "${file.name}". Please try again.`);
+        }
       }
-      next.push(await readFile(file));
+      if (next.length) onChange([...attachments, ...next]);
+    } finally {
+      setUploading(false);
     }
-    if (next.length) onChange([...attachments, ...next]);
   };
 
   const remove = (id: string) =>
@@ -100,6 +127,11 @@ export function AttachmentEditor({
             <path d="M21.44 11.05 12.25 20.24a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
           </svg>
         </IconButton>
+        {uploading && (
+          <span className="ml-1 font-mono text-[10px] uppercase tracking-[0.12em] text-subtle animate-pulse">
+            Uploading…
+          </span>
+        )}
       </div>
 
       {attachments.length > 0 && (
@@ -112,7 +144,7 @@ export function AttachmentEditor({
               {a.type.startsWith("image/") ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={a.dataUrl}
+                  src={a.url}
                   alt={a.name}
                   className="h-9 w-9 rounded-md object-cover"
                 />
@@ -192,7 +224,7 @@ export function AttachmentView({ attachments }: { attachments?: Attachment[] }) 
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={a.dataUrl}
+                src={a.url}
                 alt={a.name}
                 className="h-24 w-24 object-cover"
               />
@@ -206,7 +238,7 @@ export function AttachmentView({ attachments }: { attachments?: Attachment[] }) 
           {files.map((a) => (
             <a
               key={a.id}
-              href={a.dataUrl}
+              href={a.url}
               download={a.name}
               className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-muted transition hover:border-border-strong hover:text-foreground"
             >
@@ -223,7 +255,7 @@ export function AttachmentView({ attachments }: { attachments?: Attachment[] }) 
           <div className="flex flex-col items-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={preview.dataUrl}
+              src={preview.url}
               alt={preview.name}
               className="max-h-[70vh] w-auto rounded-lg"
             />

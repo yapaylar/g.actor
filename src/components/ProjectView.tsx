@@ -818,7 +818,7 @@ function FilesTab({ updates, notes }: { updates: Update[]; notes: Note[] }) {
           {a.type.startsWith("image/") ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={a.dataUrl}
+              src={a.url}
               alt={a.name}
               className="h-36 w-full border-b border-border object-cover"
             />
@@ -834,7 +834,7 @@ function FilesTab({ updates, notes }: { updates: Update[]; notes: Note[] }) {
             <div className="flex items-center justify-between gap-2">
               <p className="min-w-0 truncate text-sm font-medium">{a.name}</p>
               <a
-                href={a.dataUrl}
+                href={a.url}
                 download={a.name}
                 className="shrink-0 text-subtle transition hover:text-foreground"
                 aria-label={`Download ${a.name}`}

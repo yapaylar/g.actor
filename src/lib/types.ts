@@ -7,12 +7,20 @@ export interface ProjectLink {
   url: string;
 }
 
+export interface TeamMember {
+  email: string;
+  name: string;
+  role: "owner" | "member";
+  userId?: string;
+  createdAt: number;
+}
+
 export interface Attachment {
   id: ID;
   name: string;
   type: string; // mime type
   size: number; // bytes
-  dataUrl: string; // base64 data URL
+  url: string; // Storage public URL (or a base64 data URL in local fallback mode)
 }
 
 export interface Project {

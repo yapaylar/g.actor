@@ -137,6 +137,15 @@ export async function signInWithEmail(email: string): Promise<string | null> {
   return error ? error.message : null;
 }
 
+export async function signInWithGoogle(): Promise<string | null> {
+  const sb = getSupabase();
+  const { error } = await sb.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: window.location.origin },
+  });
+  return error ? error.message : null;
+}
+
 export async function signOut() {
   await getSupabase().auth.signOut();
 }
